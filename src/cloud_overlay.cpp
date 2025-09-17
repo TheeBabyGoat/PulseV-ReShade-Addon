@@ -79,33 +79,49 @@ void pv::clouds::draw_overlay(CloudsState& S) {
         ImGui::EndDisabled();
 
         CloudPreset& p = S.store.get_or_create(S.edit.weather, S.edit.bucket);
-        auto slider = [](const char* l, float* v, float minv, float maxv) { ImGui::SetNextItemWidth(240); ImGui::SliderFloat(l, v, minv, maxv, "%.3f"); };
+        const CloudPreset defaults;
 
-        slider("cloudScale", &p.cloudScale, 0.01f, 8.0f);
-        slider("cloudDetailScale", &p.cloudDetailScale, 0.01f, 16.0f);
-        slider("cloudStretch", &p.cloudStretch, -4.0f, 4.0f);
-        slider("cloudBaseCurl", &p.cloudBaseCurl, 0.0f, 2.0f);
-        slider("cloudDetailCurl", &p.cloudDetailCurl, 0.0f, 2.0f);
-        slider("cloudBaseCurlScale", &p.cloudBaseCurlScale, 0.0f, 8.0f);
-        slider("cloudDetailCurlScale", &p.cloudDetailCurlScale, 0.0f, 8.0f);
-        slider("cloudYFade", &p.cloudYFade, 0.0f, 1.0f);
+        auto reset_button = [&](const char* id, auto& value_to_reset, const auto& default_value) {
+            ImGui::PushID(id);
+            ImGui::SameLine();
+            if (ImGui::Button("R")) {
+                value_to_reset = default_value;
+            }
+            ImGui::PopID();
+            };
 
-        slider("cloudCover", &p.cloudCover, 0.0f, 1.0f);
-        slider("cloudExtinction", &p.cloudExtinction, 0.0f, 4.0f);
-        slider("cloudAmbientAmount", &p.cloudAmbientAmount, 0.0f, 2.0f);
-        slider("cloudAbsorption", &p.cloudAbsorption, 0.0f, 2.0f);
-        slider("cloudForwardScatter", &p.cloudForwardScatter, 0.0f, 1.0f);
-        slider("cloudLightStepFactor", &p.cloudLightStepFactor, 0.1f, 4.0f);
-        slider("cloudContrast", &p.cloudContrast, 0.0f, 4.0f);
-        slider("cloudLuminanceMultiplier", &p.cloudLuminanceMultiplier, 0.0f, 8.0f);
-        slider("cloudSunLightPower", &p.cloudSunLightPower, 0.0f, 8.0f);
-        slider("cloudMoonLightPower", &p.cloudMoonLightPower, 0.0f, 8.0f);
+        auto slider = [&](const char* l, float* v, float minv, float maxv, const float& default_v) {
+            ImGui::SetNextItemWidth(240);
+            ImGui::SliderFloat(l, v, minv, maxv, "%.3f");
+            reset_button(l, *v, default_v);
+            };
+
+        slider("cloudScale", &p.cloudScale, 0.01f, 8.0f, defaults.cloudScale);
+        slider("cloudDetailScale", &p.cloudDetailScale, 0.01f, 16.0f, defaults.cloudDetailScale);
+        slider("cloudStretch", &p.cloudStretch, -4.0f, 4.0f, defaults.cloudStretch);
+        slider("cloudBaseCurl", &p.cloudBaseCurl, 0.0f, 2.0f, defaults.cloudBaseCurl);
+        slider("cloudDetailCurl", &p.cloudDetailCurl, 0.0f, 2.0f, defaults.cloudDetailCurl);
+        slider("cloudBaseCurlScale", &p.cloudBaseCurlScale, 0.0f, 8.0f, defaults.cloudBaseCurlScale);
+        slider("cloudDetailCurlScale", &p.cloudDetailCurlScale, 0.0f, 8.0f, defaults.cloudDetailCurlScale);
+        slider("cloudYFade", &p.cloudYFade, 0.0f, 1.0f, defaults.cloudYFade);
+
+        slider("cloudCover", &p.cloudCover, 0.0f, 1.0f, defaults.cloudCover);
+        slider("cloudExtinction", &p.cloudExtinction, 0.0f, 4.0f, defaults.cloudExtinction);
+        slider("cloudAmbientAmount", &p.cloudAmbientAmount, 0.0f, 2.0f, defaults.cloudAmbientAmount);
+        slider("cloudAbsorption", &p.cloudAbsorption, 0.0f, 2.0f, defaults.cloudAbsorption);
+        slider("cloudForwardScatter", &p.cloudForwardScatter, 0.0f, 1.0f, defaults.cloudForwardScatter);
+        slider("cloudLightStepFactor", &p.cloudLightStepFactor, 0.1f, 4.0f, defaults.cloudLightStepFactor);
+        slider("cloudContrast", &p.cloudContrast, 0.0f, 4.0f, defaults.cloudContrast);
+        slider("cloudLuminanceMultiplier", &p.cloudLuminanceMultiplier, 0.0f, 8.0f, defaults.cloudLuminanceMultiplier);
+        slider("cloudSunLightPower", &p.cloudSunLightPower, 0.0f, 8.0f, defaults.cloudSunLightPower);
+        slider("cloudMoonLightPower", &p.cloudMoonLightPower, 0.0f, 8.0f, defaults.cloudMoonLightPower);
 
         float clr[3] = { p.MoonColor.x,p.MoonColor.y,p.MoonColor.z };
         if (ImGui::ColorEdit3("MoonColor", clr, ImGuiColorEditFlags_Float)) { p.MoonColor = { clr[0],clr[1],clr[2] }; }
+        reset_button("MoonColor", p.MoonColor, defaults.MoonColor);
 
-        slider("MoonlightBoost", &p.MoonlightBoost, 0.0f, 8.0f);
-        slider("cloudSkyLightPower", &p.cloudSkyLightPower, 0.0f, 8.0f);
+        slider("MoonlightBoost", &p.MoonlightBoost, 0.0f, 8.0f, defaults.MoonlightBoost);
+        slider("cloudSkyLightPower", &p.cloudSkyLightPower, 0.0f, 8.0f, defaults.cloudSkyLightPower);
 
         if (ImGui::Button("Save Preset")) {
             auto path = derive_presets_path(S.rt); S.store.save(path);

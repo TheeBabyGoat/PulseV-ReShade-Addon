@@ -37,24 +37,32 @@
   <ItemGroup>
     <ClCompile Include="..\deps\tinyxml2\tinyxml2.cpp" />
     <ClCompile Include="addon.cpp" />
+    <ClCompile Include="cloud_overlay.cpp" />
+    <ClCompile Include="cloud_presets.cpp" />
+    <ClCompile Include="cloud_uniforms.cpp" />
     <ClCompile Include="data_reader.cpp" />
     <ClCompile Include="game_data_source.cpp" />
     <ClCompile Include="gtav_source.cpp" />
     <ClCompile Include="rdr1_source.cpp" />
-    <ClCompile Include="rdr1_source.hpp" />
-    <ClCompile Include="rdr1_timecycle.hpp" />
     <ClCompile Include="reshade_data.cpp" />
+    <ClCompile Include="scripthook_bridge.cpp" />
     <ClCompile Include="timecycle.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\deps\tinyxml2\tinyxml2.h" />
     <ClInclude Include="addon.hpp" />
+    <ClInclude Include="cloud_overlay.hpp" />
+    <ClInclude Include="cloud_presets.hpp" />
+    <ClInclude Include="cloud_uniforms.hpp" />
     <ClInclude Include="data_reader.hpp" />
     <ClInclude Include="depth.hpp" />
     <ClInclude Include="game_data_source.hpp" />
     <ClInclude Include="gtav_source.hpp" />
     <ClInclude Include="gtav_timecycle.hpp" />
+    <ClInclude Include="rdr1_source.hpp" />
+    <ClInclude Include="rdr1_timecycle.hpp" />
     <ClInclude Include="reshade_data.hpp" />
+    <ClInclude Include="scripthook_bridge.hpp" />
     <ClInclude Include="timecycle.hpp" />
     <ClInclude Include="types.hpp" />
     <ClInclude Include="util.hpp" />
@@ -267,9 +275,9 @@
       <Optimization>MaxSpeed</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
-      <PreprocessorDefinitions>RFX_GAME_GTAV;WIN32_LEAN_AND_MEAN;NOMINMAX;ImTextureID=ImU64;_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PULSV_USE_SCRIPTHOOKV;RFX_GAME_GTAV;WIN32_LEAN_AND_MEAN;NOMINMAX;ImTextureID=ImU64;_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\deps\eigen;..\deps\tinyxml2;..\deps\imgui;..\deps\reshade\include;..\deps\scripthookv;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\Crush\source\repos\PulseV-reshade-camerafx\deps\scripthookv\scripthookv\inc;..\deps\eigen;..\deps\tinyxml2;..\deps\imgui;..\deps\reshade\include;..\deps\scripthookv;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
