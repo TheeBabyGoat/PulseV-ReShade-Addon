@@ -10,15 +10,16 @@ using namespace pv::clouds;
 static CloudPreset lerp(const CloudPreset& a, const CloudPreset& b, float t) {
     CloudPreset r = a; auto L = [&](float& x, float y) { x = x + (y - x) * t; };
     L(r.cloudScale, b.cloudScale); L(r.cloudDetailScale, b.cloudDetailScale); L(r.cloudStretch, b.cloudStretch);
+    L(r.cloudHeightOffset, b.cloudHeightOffset);
     L(r.cloudBaseCurl, b.cloudBaseCurl); L(r.cloudDetailCurl, b.cloudDetailCurl);
     L(r.cloudBaseCurlScale, b.cloudBaseCurlScale); L(r.cloudDetailCurlScale, b.cloudDetailCurlScale);
-    L(r.cloudYFade, b.cloudYFade); L(r.cloudCover, b.cloudCover); L(r.cloudExtinction, b.cloudExtinction);
+    L(r.cloudYFade, b.cloudYFade); L(r.cloudCover, b.cloudCover); L(r.cloudThreshold, b.cloudThreshold); L(r.cloudJitter, b.cloudJitter); L(r.cloudExtinction, b.cloudExtinction);
     L(r.cloudAmbientAmount, b.cloudAmbientAmount); L(r.cloudAbsorption, b.cloudAbsorption);
     L(r.cloudForwardScatter, b.cloudForwardScatter); L(r.cloudLightStepFactor, b.cloudLightStepFactor);
     L(r.cloudContrast, b.cloudContrast); L(r.cloudLuminanceMultiplier, b.cloudLuminanceMultiplier);
     L(r.cloudSunLightPower, b.cloudSunLightPower); L(r.cloudMoonLightPower, b.cloudMoonLightPower);
     r.MoonColor.x += (b.MoonColor.x - r.MoonColor.x) * t; r.MoonColor.y += (b.MoonColor.y - r.MoonColor.y) * t; r.MoonColor.z += (b.MoonColor.z - r.MoonColor.z) * t;
-    L(r.MoonlightBoost, b.MoonlightBoost); L(r.cloudSkyLightPower, b.cloudSkyLightPower);
+    L(r.MoonlightBoost, b.MoonlightBoost); L(r.cloudSkyLightPower, b.cloudSkyLightPower); L(r.cloudDenoise, b.cloudDenoise); L(r.cloudDepthEdgeFar, b.cloudDepthEdgeFar); L(r.cloudDepthEdgeThreshold, b.cloudDepthEdgeThreshold);
     return r;
 }
 
@@ -99,6 +100,7 @@ void pv::clouds::draw_overlay(CloudsState& S) {
         slider("cloudScale", &p.cloudScale, 0.01f, 8.0f, defaults.cloudScale);
         slider("cloudDetailScale", &p.cloudDetailScale, 0.01f, 16.0f, defaults.cloudDetailScale);
         slider("cloudStretch", &p.cloudStretch, -4.0f, 4.0f, defaults.cloudStretch);
+        slider("cloudHeightOffset", &p.cloudHeightOffset, 0.01f, 8.0f, defaults.cloudHeightOffset);
         slider("cloudBaseCurl", &p.cloudBaseCurl, 0.0f, 2.0f, defaults.cloudBaseCurl);
         slider("cloudDetailCurl", &p.cloudDetailCurl, 0.0f, 2.0f, defaults.cloudDetailCurl);
         slider("cloudBaseCurlScale", &p.cloudBaseCurlScale, 0.0f, 8.0f, defaults.cloudBaseCurlScale);
@@ -106,6 +108,8 @@ void pv::clouds::draw_overlay(CloudsState& S) {
         slider("cloudYFade", &p.cloudYFade, 0.0f, 1.0f, defaults.cloudYFade);
 
         slider("cloudCover", &p.cloudCover, 0.0f, 1.0f, defaults.cloudCover);
+        slider("cloudThreshold", &p.cloudThreshold, 0.01f, 8.0f, defaults.cloudThreshold);
+        slider("cloudJitter", &p.cloudJitter, 0.01f, 8.0f, defaults.cloudJitter);
         slider("cloudExtinction", &p.cloudExtinction, 0.0f, 4.0f, defaults.cloudExtinction);
         slider("cloudAmbientAmount", &p.cloudAmbientAmount, 0.0f, 2.0f, defaults.cloudAmbientAmount);
         slider("cloudAbsorption", &p.cloudAbsorption, 0.0f, 2.0f, defaults.cloudAbsorption);
@@ -122,6 +126,9 @@ void pv::clouds::draw_overlay(CloudsState& S) {
 
         slider("MoonlightBoost", &p.MoonlightBoost, 0.0f, 8.0f, defaults.MoonlightBoost);
         slider("cloudSkyLightPower", &p.cloudSkyLightPower, 0.0f, 8.0f, defaults.cloudSkyLightPower);
+        slider("cloudDenoise", &p.cloudDenoise, 0.01f, 8.0f, defaults.cloudDenoise);
+        slider("cloudDepthEdgeFar", &p.cloudDepthEdgeFar, 0.01f, 8.0f, defaults.cloudDepthEdgeFar);
+        slider("cloudDepthEdgeThreshold", &p.cloudDepthEdgeThreshold, 0.01f, 8.0f, defaults.cloudDepthEdgeThreshold);
 
         if (ImGui::Button("Save Preset")) {
             auto path = derive_presets_path(S.rt); S.store.save(path);

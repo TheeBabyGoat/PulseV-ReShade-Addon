@@ -2,11 +2,11 @@
 
 
 static UInt2 render_target_resolution = { 0, 0 };
-static void *first_swapchain_hwnd = NULL;
+static void* first_swapchain_hwnd = NULL;
 
-void on_init_swapchain(reshade::api::swapchain *swapchain, bool resize)
+void on_init_swapchain(reshade::api::swapchain* swapchain, bool resize)
 {
-	void *hwnd = swapchain->get_hwnd();
+	void* hwnd = swapchain->get_hwnd();
 
 	if (first_swapchain_hwnd == NULL) {
 		first_swapchain_hwnd = hwnd;
@@ -16,7 +16,7 @@ void on_init_swapchain(reshade::api::swapchain *swapchain, bool resize)
 		return;
 	}
 
-	const auto &back_buffer = swapchain->get_device()->get_resource_desc(swapchain->get_current_back_buffer());
+	const auto& back_buffer = swapchain->get_device()->get_resource_desc(swapchain->get_current_back_buffer());
 
 	if (static_cast<int>(back_buffer.usage & reshade::api::resource_usage::render_target) == 0) {
 		return;
