@@ -17,13 +17,47 @@ namespace pv::clouds {
 
 	struct Float3 { float x = 1, y = 1, z = 1; };
 
+	struct CloudLayer {
+		float scale = 1.0f;
+		float detailScale = 1.0f;
+		float stretch = 1.0f;
+		float baseCurl = 1.0f;
+		float detailCurl = 1.0f;
+		float baseCurlScale = 1.0f;
+		float detailCurlScale = 1.0f;
+		float smoothness = 1.0f;
+		float softness = 1.0f;
+		float bottom = 100.0f;
+		float top = 1000.0f;
+		float cover = 1.0f;
+		float extinction = 1.0f;
+		float ambientAmount = 1.0f;
+		float absorption = 1.0f;
+		float luminance = 1.0f;
+		float sunLightPower = 1.0f;
+		float moonLightPower = 1.0f;
+		float skyLightPower = 1.0f;
+		float bottomDensity = 1.0f;
+		float middleDensity = 1.0f;
+		float topDensity = 1.0f;
+	};
+
 	struct CloudPreset {
-		float cloudScale = 1.0f, cloudDetailScale = 1.0f, cloudStretch = 0.0f, cloudBaseCurl = 0.0f, cloudDetailCurl = 0.0f;
-		float cloudHeightOffset = 1.0f, cloudThreshold = 0.5f, cloudJitter = 0.1f, cloudDenoise = 0.1f, cloudDepthEdgeFar = 1.0f, cloudDepthEdgeThreshold = 0.1f;
-		float cloudBaseCurlScale = 1.0f, cloudDetailCurlScale = 1.0f, cloudYFade = 0.0f, cloudCover = 0.5f, cloudExtinction = 1.0f;
-		float cloudAmbientAmount = 0.2f, cloudAbsorption = 0.1f, cloudForwardScatter = 0.6f, cloudLightStepFactor = 1.0f;
-		float cloudContrast = 1.0f, cloudLuminanceMultiplier = 1.0f, cloudSunLightPower = 1.0f, cloudMoonLightPower = 1.0f;
-		Float3 MoonColor{ 1,1,1 }; float MoonlightBoost = 0.0f, cloudSkyLightPower = 0.0f;
+		CloudLayer bottom_layer;
+		CloudLayer top_layer;
+		Float3 MoonColor{ 1,1,1 };
+		float cloudThreshold = 0.5f;
+		float cloudJitter = 0.1f;
+		float cloudDenoise = 0.1f;
+		float cloudDepthEdgeFar = 1.0f;
+		float cloudDepthEdgeThreshold = 0.1f;
+		float cloudForwardScatter = 0.6f;
+		float cloudLightStepFactor = 1.0f;
+		float cloudContrast = 1.0f;
+		float cloudLuminanceMultiplier = 1.0f;
+		float MoonlightBoost = 0.0f;
+		float cloudYFade = 0.0f;
+		float cloudHeightOffset = 1.0f;
 	};
 
 	struct GlobalConfig {
