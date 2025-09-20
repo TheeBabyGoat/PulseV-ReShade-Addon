@@ -60,56 +60,6 @@ static void write_global(pv::ini::Ini& ini, const GlobalConfig& g) {
     s.set_float("BlendTimeSeconds", g.blendSeconds);
 }
 
-static void read_layer(const pv::ini::Section& s, CloudLayer& p, const std::string& prefix) {
-    p.scale = s.get_float((prefix + "scale").c_str(), p.scale);
-    p.detailScale = s.get_float((prefix + "detailScale").c_str(), p.detailScale);
-    p.stretch = s.get_float((prefix + "stretch").c_str(), p.stretch);
-    p.baseCurl = s.get_float((prefix + "baseCurl").c_str(), p.baseCurl);
-    p.detailCurl = s.get_float((prefix + "detailCurl").c_str(), p.detailCurl);
-    p.baseCurlScale = s.get_float((prefix + "baseCurlScale").c_str(), p.baseCurlScale);
-    p.detailCurlScale = s.get_float((prefix + "detailCurlScale").c_str(), p.detailCurlScale);
-    p.smoothness = s.get_float((prefix + "smoothness").c_str(), p.smoothness);
-    p.softness = s.get_float((prefix + "softness").c_str(), p.softness);
-    p.bottom = s.get_float((prefix + "bottom").c_str(), p.bottom);
-    p.top = s.get_float((prefix + "top").c_str(), p.top);
-    p.cover = s.get_float((prefix + "cover").c_str(), p.cover);
-    p.extinction = s.get_float((prefix + "extinction").c_str(), p.extinction);
-    p.ambientAmount = s.get_float((prefix + "ambientAmount").c_str(), p.ambientAmount);
-    p.absorption = s.get_float((prefix + "absorption").c_str(), p.absorption);
-    p.luminance = s.get_float((prefix + "luminance").c_str(), p.luminance);
-    p.sunLightPower = s.get_float((prefix + "sunLightPower").c_str(), p.sunLightPower);
-    p.moonLightPower = s.get_float((prefix + "moonLightPower").c_str(), p.moonLightPower);
-    p.skyLightPower = s.get_float((prefix + "skyLightPower").c_str(), p.skyLightPower);
-    p.bottomDensity = s.get_float((prefix + "bottomDensity").c_str(), p.bottomDensity);
-    p.middleDensity = s.get_float((prefix + "middleDensity").c_str(), p.middleDensity);
-    p.topDensity = s.get_float((prefix + "topDensity").c_str(), p.topDensity);
-}
-
-static void write_layer(pv::ini::Section& s, const CloudLayer& p, const std::string& prefix) {
-    s.set_float((prefix + "scale").c_str(), p.scale);
-    s.set_float((prefix + "detailScale").c_str(), p.detailScale);
-    s.set_float((prefix + "stretch").c_str(), p.stretch);
-    s.set_float((prefix + "baseCurl").c_str(), p.baseCurl);
-    s.set_float((prefix + "detailCurl").c_str(), p.detailCurl);
-    s.set_float((prefix + "baseCurlScale").c_str(), p.baseCurlScale);
-    s.set_float((prefix + "detailCurlScale").c_str(), p.detailCurlScale);
-    s.set_float((prefix + "smoothness").c_str(), p.smoothness);
-    s.set_float((prefix + "softness").c_str(), p.softness);
-    s.set_float((prefix + "bottom").c_str(), p.bottom);
-    s.set_float((prefix + "top").c_str(), p.top);
-    s.set_float((prefix + "cover").c_str(), p.cover);
-    s.set_float((prefix + "extinction").c_str(), p.extinction);
-    s.set_float((prefix + "ambientAmount").c_str(), p.ambientAmount);
-    s.set_float((prefix + "absorption").c_str(), p.absorption);
-    s.set_float((prefix + "luminance").c_str(), p.luminance);
-    s.set_float((prefix + "sunLightPower").c_str(), p.sunLightPower);
-    s.set_float((prefix + "moonLightPower").c_str(), p.moonLightPower);
-    s.set_float((prefix + "skyLightPower").c_str(), p.skyLightPower);
-    s.set_float((prefix + "bottomDensity").c_str(), p.bottomDensity);
-    s.set_float((prefix + "middleDensity").c_str(), p.middleDensity);
-    s.set_float((prefix + "topDensity").c_str(), p.topDensity);
-}
-
 bool PresetStore::load(const std::string& path) {
     pv::ini::Ini ini; if (!ini.load(path)) {
         const char* env = std::getenv("PULSEV_LOAD_WEATHERS");
@@ -122,18 +72,39 @@ bool PresetStore::load(const std::string& path) {
         auto pos = sec.find(':'); if (pos == std::string::npos) continue;
         Weather w{}; if (!from_string(sec.substr(0, pos), w)) continue;
         int hh = 0, mm = 0; if (std::sscanf(sec.c_str() + pos + 1, "%d:%d", &hh, &mm) != 2) continue;
-        TimeBucket b{ hh,mm };
-        CloudPreset& p = get_or_create(w, b);
+        TimeBucket b{ hh,mm }; CloudPreset p{};
+        auto& kv = kvp.second;
 
-        read_layer(kvp.second, p.bottom_layer, "Bottom");
-        read_layer(kvp.second, p.top_layer, "Top");
+        p.cloudScale = kv.get_float("cloudScale", p.cloudScale);
+        p.cloudDetailScale = kv.get_float("cloudDetailScale", p.cloudDetailScale);
+        p.cloudStretch = kv.get_float("cloudStretch", p.cloudStretch);
+        p.cloudBaseCurl = kv.get_float("cloudBaseCurl", p.cloudBaseCurl);
+        p.cloudDetailCurl = kv.get_float("cloudDetailCurl", p.cloudDetailCurl);
+        p.cloudBaseCurlScale = kv.get_float("cloudBaseCurlScale", p.cloudBaseCurlScale);
+        p.cloudDetailCurlScale = kv.get_float("cloudDetailCurlScale", p.cloudDetailCurlScale);
+        p.cloudYFade = kv.get_float("cloudYFade", p.cloudYFade);
+
+        p.cloudCover = kv.get_float("cloudCover", p.cloudCover);
+        p.cloudExtinction = kv.get_float("cloudExtinction", p.cloudExtinction);
+        p.cloudAmbientAmount = kv.get_float("cloudAmbientAmount", p.cloudAmbientAmount);
+        p.cloudAbsorption = kv.get_float("cloudAbsorption", p.cloudAbsorption);
+        p.cloudForwardScatter = kv.get_float("cloudForwardScatter", p.cloudForwardScatter);
+        p.cloudLightStepFactor = kv.get_float("cloudLightStepFactor", p.cloudLightStepFactor);
+        p.cloudContrast = kv.get_float("cloudContrast", p.cloudContrast);
+        p.cloudLuminanceMultiplier = kv.get_float("cloudLuminanceMultiplier", p.cloudLuminanceMultiplier);
+        p.cloudSunLightPower = kv.get_float("cloudSunLightPower", p.cloudSunLightPower);
+        p.cloudMoonLightPower = kv.get_float("cloudMoonLightPower", p.cloudMoonLightPower);
 
         {
-            float r = kvp.second.get_float("MoonColorR", p.MoonColor.x);
-            float g = kvp.second.get_float("MoonColorG", p.MoonColor.y);
-            float b3 = kvp.second.get_float("MoonColorB", p.MoonColor.z);
+            float r = kv.get_float("MoonColorR", p.MoonColor.x);
+            float g = kv.get_float("MoonColorG", p.MoonColor.y);
+            float b3 = kv.get_float("MoonColorB", p.MoonColor.z);
             p.MoonColor = { r,g,b3 };
         }
+        p.MoonlightBoost = kv.get_float("MoonlightBoost", p.MoonlightBoost);
+        p.cloudSkyLightPower = kv.get_float("cloudSkyLightPower", p.cloudSkyLightPower);
+
+        map[make_key(w, b)] = p;
     }
     return true;
 }
@@ -144,48 +115,41 @@ bool PresetStore::save(const std::string& path) const {
     write_global(ini, globals);
     for (auto& [key, p] : map) {
         auto& s = ini[key];
-        write_layer(s, p.bottom_layer, "Bottom");
-        write_layer(s, p.top_layer, "Top");
+        s.set_float("cloudScale", p.cloudScale);
+        s.set_float("cloudDetailScale", p.cloudDetailScale);
+        s.set_float("cloudStretch", p.cloudStretch);
+        s.set_float("cloudBaseCurl", p.cloudBaseCurl);
+        s.set_float("cloudDetailCurl", p.cloudDetailCurl);
+        s.set_float("cloudBaseCurlScale", p.cloudBaseCurlScale);
+        s.set_float("cloudDetailCurlScale", p.cloudDetailCurlScale);
+        s.set_float("cloudYFade", p.cloudYFade);
+
+        s.set_float("cloudCover", p.cloudCover);
+        s.set_float("cloudExtinction", p.cloudExtinction);
+        s.set_float("cloudAmbientAmount", p.cloudAmbientAmount);
+        s.set_float("cloudAbsorption", p.cloudAbsorption);
+        s.set_float("cloudForwardScatter", p.cloudForwardScatter);
+        s.set_float("cloudLightStepFactor", p.cloudLightStepFactor);
+        s.set_float("cloudContrast", p.cloudContrast);
+        s.set_float("cloudLuminanceMultiplier", p.cloudLuminanceMultiplier);
+        s.set_float("cloudSunLightPower", p.cloudSunLightPower);
+        s.set_float("cloudMoonLightPower", p.cloudMoonLightPower);
 
         s.set_float("MoonColorR", p.MoonColor.x);
         s.set_float("MoonColorG", p.MoonColor.y);
         s.set_float("MoonColorB", p.MoonColor.z);
+
+        s.set_float("MoonlightBoost", p.MoonlightBoost);
+        s.set_float("cloudSkyLightPower", p.cloudSkyLightPower);
     }
     return ini.save(path);
 }
 
+
+
 // Runtime parser: load presets from shaders/weathers.fxh
 #include <fstream>
 #include <sstream>
-
-static void map_weather_file_to_layer(const std::vector<float>& vals, size_t offset, CloudLayer& layer) {
-    auto get = [&](size_t idx, float def) {
-        return (offset + idx) < vals.size() ? vals[offset + idx] : def;
-        };
-    layer.scale = get(0, layer.scale);
-    layer.detailScale = get(1, layer.detailScale);
-    layer.stretch = get(2, layer.stretch);
-    layer.baseCurl = get(3, layer.baseCurl);
-    layer.detailCurl = get(4, layer.detailCurl);
-    layer.baseCurlScale = get(5, layer.baseCurlScale);
-    layer.detailCurlScale = get(6, layer.detailCurlScale);
-    layer.smoothness = get(7, layer.smoothness);
-    layer.softness = get(8, layer.softness);
-    layer.bottom = get(9, layer.bottom);
-    layer.top = get(10, layer.top);
-    layer.cover = get(11, layer.cover);
-    layer.extinction = get(12, layer.extinction);
-    layer.ambientAmount = get(13, layer.ambientAmount);
-    layer.absorption = get(14, layer.absorption);
-    layer.luminance = get(15, layer.luminance);
-    layer.sunLightPower = get(16, layer.sunLightPower);
-    layer.moonLightPower = get(17, layer.moonLightPower);
-    layer.skyLightPower = get(18, layer.skyLightPower);
-    layer.bottomDensity = get(19, layer.bottomDensity);
-    layer.middleDensity = get(20, layer.middleDensity);
-    layer.topDensity = get(21, layer.topDensity);
-}
-
 
 bool PresetStore::load_from_weathers_file(const std::string& shaders_folder) {
     std::string path = shaders_folder;
@@ -227,14 +191,39 @@ bool PresetStore::load_from_weathers_file(const std::string& shaders_folder) {
             }
             catch (...) { /* ignore non-floats */ }
         }
-
+        // map vals into CloudPreset using deterministic mapping
         CloudPreset cp;
-        // The CLOUD_LAYER_PRESET macro in weathers.fxh has a fixed number of arguments.
-        // The first 23 are for the bottom layer, and the next 23 are for the top layer.
-        // This parsing is based on that fixed structure.
-        map_weather_file_to_layer(vals, 0, cp.bottom_layer);
-        map_weather_file_to_layer(vals, 23, cp.top_layer);
-
+        // default construct preserves defaults
+        if (!vals.empty()) {
+            size_t n = vals.size();
+            size_t half = n / 2;
+            auto g = [&](size_t idx, float d)->float { return idx < n ? vals[idx] : d; };
+            // bottom indices 0..half-1, top indices half..n-1; use averages for many fields
+            auto b = [&](size_t i, float d) { return i < half ? vals[i] : d; };
+            auto t = [&](size_t i, float d) { return (half + i) < n ? vals[half + i] : d; };
+            cp.cloudScale = (b(0, 1.0f) + t(0, 1.0f)) * 0.5f;
+            cp.cloudDetailScale = (b(1, 1.0f) + t(1, 1.0f)) * 0.5f;
+            cp.cloudStretch = (b(2, 0.0f) + t(2, 0.0f)) * 0.5f;
+            cp.cloudBaseCurl = (b(3, 0.0f) + t(3, 0.0f)) * 0.5f;
+            cp.cloudDetailCurl = (b(4, 0.0f) + t(4, 0.0f)) * 0.5f;
+            cp.cloudBaseCurlScale = (b(5, 1.0f) + t(5, 1.0f)) * 0.5f;
+            cp.cloudDetailCurlScale = (b(6, 1.0f) + t(6, 1.0f)) * 0.5f;
+            // heights: bottom bottom/top at indices ~10,11
+            cp.cloudHeightOffset = b(10, cp.cloudHeightOffset);
+            // cover at ~12
+            cp.cloudCover = (b(12, cp.cloudCover) + t(12, cp.cloudCover)) * 0.5f;
+            cp.cloudExtinction = (b(13, cp.cloudExtinction) + t(13, cp.cloudExtinction)) * 0.5f;
+            cp.cloudAmbientAmount = (b(14, cp.cloudAmbientAmount) + t(14, cp.cloudAmbientAmount)) * 0.5f;
+            cp.cloudAbsorption = (b(15, cp.cloudAbsorption) + t(15, cp.cloudAbsorption)) * 0.5f;
+            // lighting: sun/moon/sky - use top indices around 18..20 relative to top block
+            cp.cloudSunLightPower = t(18, cp.cloudSunLightPower);
+            cp.cloudMoonLightPower = t(19, cp.cloudMoonLightPower);
+            cp.cloudSkyLightPower = t(20, cp.cloudSkyLightPower);
+            cp.cloudLuminanceMultiplier = (t(10, cp.cloudLuminanceMultiplier) + b(10, cp.cloudLuminanceMultiplier)) * 0.5f;
+        }
+        // time bucket default noon
+        TimeBucket tb{ 12,0 };
+        // map name to Weather enum if possible
         Weather w;
         std::string up = name;
         for (auto& c : up) c = (char)toupper(c);
@@ -247,16 +236,9 @@ bool PresetStore::load_from_weathers_file(const std::string& shaders_folder) {
             }
             if (!found) w = Weather::NEUTRAL;
         }
-
-        // The weathers.fxh file does not contain time-of-day specific data.
-        // We apply the same parsed preset to all time buckets to allow the user
-        // to customize them later and save them to the INI file.
-        for (const auto& bucket : kBuckets) {
-            map[make_key(w, bucket)] = cp;
-        }
-        map[make_key(w, kBucket2200)] = cp;
-
+        map[make_key(w, tb)] = cp;
         searchStart = m.suffix().first;
     }
     return true;
 }
+
