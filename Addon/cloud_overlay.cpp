@@ -4,8 +4,31 @@
 #include "scripthook_bridge.hpp"
 #include <filesystem>
 #include <algorithm>
+#include <string>
 
 using namespace pv::clouds;
+
+static const char* weather_to_string(Weather w) {
+    switch (w) {
+    case Weather::CLEAR:      return "CLEAR";
+    case Weather::EXTRASUNNY: return "EXTRASUNNY";
+    case Weather::CLOUDS:     return "CLOUDS";
+    case Weather::OVERCAST:   return "OVERCAST";
+    case Weather::RAIN:       return "RAIN";
+    case Weather::CLEARING:   return "CLEARING";
+    case Weather::THUNDER:    return "THUNDER";
+    case Weather::SMOG:       return "SMOG";
+    case Weather::FOGGY:      return "FOGGY";
+    case Weather::XMAS:       return "XMAS";
+    case Weather::SNOW:       return "SNOW";
+    case Weather::SNOWLIGHT:  return "SNOWLIGHT";
+    case Weather::BLIZZARD:   return "BLIZZARD";
+    case Weather::HALLOWEEN:  return "HALLOWEEN";
+    case Weather::NEUTRAL:    return "NEUTRAL";
+    default:                  return "CLEAR";
+    }
+}
+
 
 static CloudPreset lerp(const CloudPreset& a, const CloudPreset& b, float t) {
     CloudPreset r = a; auto L = [&](float& x, float y) { x = x + (y - x) * t; };
@@ -37,26 +60,44 @@ void pv::clouds::on_effect_reload(CloudsState& S) {
 }
 
 void pv::clouds::tick(CloudsState& S, double now) {
-    if (!S.rt || !S.ucache.valid) return;
+    if (!S.rt) return;
+    if (!S.ucache.valid) { discover_uniforms(S.rt, S.ucache); }
+    if (!S.ucache.valid) return;
+
     LiveState live = poll_live_state();
-    const bool autoApply = S.store.globals.autoApply;
-    Weather w = autoApply && live.shv_available ? live.weather : S.edit.weather;
-    TimeBucket b = autoApply && live.shv_available ? nearest_bucket(live.hour, live.minute) : S.edit.bucket;
-    const CloudPreset* P = S.store.try_get(w, b);
-    if (!P) return;
+    const bool shv = live.shv_available;
+
+    // The shader renders the game's *current* weather. Even when Auto-apply is off,
+    // we still need to push uniforms for the weather that's actually being rendered.
+    Weather render_w = shv ? live.weather : S.edit.weather;
+    TimeBucket render_b = shv ? nearest_bucket(live.hour, live.minute) : S.edit.bucket;
+
+    // 1) Apply to the rendered weather
+    const CloudPreset* P_render = S.store.try_get(render_w, render_b);
+    if (!P_render) P_render = &S.store.get_or_create(render_w, render_b);
     float t = 1.0f;
     if (S.store.globals.blendSeconds > 0.0f) {
         double dt = std::max(0.0, now - S.last_change_time);
         t = (float)std::min(1.0, dt / S.store.globals.blendSeconds);
     }
-    CloudPreset cur = lerp(S.last_applied, *P, t);
-    apply_preset(S.rt, S.ucache, cur);
-    if (t >= 1.0f) S.last_applied = *P;
+    CloudPreset cur = lerp(S.last_applied, *P_render, t);
+    apply_preset_for_weather(S.rt, S.ucache, cur, render_w);
+    if (t >= 1.0f) S.last_applied = *P_render;
+
+    // 2) If Auto-apply is OFF and the user has selected a *different* weather/time,
+    // also push those uniforms so they can preview edits without changing game weather.
+    if (!S.store.globals.autoApply) {
+        if (S.edit.weather != render_w || S.edit.bucket.h != render_b.h || S.edit.bucket.m != render_b.m) {
+            const CloudPreset* P_edit = S.store.try_get(S.edit.weather, S.edit.bucket);
+            if (!P_edit) P_edit = &S.store.get_or_create(S.edit.weather, S.edit.bucket);
+            apply_preset_for_weather(S.rt, S.ucache, *P_edit, S.edit.weather);
+        }
+    }
 }
 
 void pv::clouds::draw_overlay(CloudsState& S) {
     if (!S.ui_open) return;
-    if (ImGui::CollapsingHeader("PulseV Clouds Presets", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("PulseV Clouds Presets", ImGuiTreeNodeFlags_None)) {
         if (ImGui::Checkbox("Auto-apply (ScriptHookV)", &S.store.globals.autoApply)) {
             S.last_change_time = 0.0;
         }
@@ -130,6 +171,64 @@ void pv::clouds::draw_overlay(CloudsState& S) {
         slider("cloudDepthEdgeFar", &p.cloudDepthEdgeFar, 0.01f, 8.0f, defaults.cloudDepthEdgeFar);
         slider("cloudDepthEdgeThreshold", &p.cloudDepthEdgeThreshold, 0.01f, 8.0f, defaults.cloudDepthEdgeThreshold);
 
+        ImGui::SeparatorText("Cloud Layers");
+        // Bottom Layer
+        if (ImGui::CollapsingHeader("Bottom Layer", ImGuiTreeNodeFlags_None)) {
+            CloudLayer& L = p.bottomLayer;
+            const CloudLayer& D = defaults.bottomLayer;
+            slider("BottomScale", &L.scale, 0.00f, 8.00f, D.scale);
+            slider("BottomDetailScale", &L.detailScale, 0.00f, 16.00f, D.detailScale);
+            slider("BottomStretch", &L.stretch, 0.25f, 4.00f, D.stretch);
+            slider("BottomBaseCurl", &L.baseCurl, 0.00f, 2.00f, D.baseCurl);
+            slider("BottomDetailCurl", &L.detailCurl, 0.00f, 2.00f, D.detailCurl);
+            slider("BottomBaseCurlScale", &L.baseCurlScale, 0.00f, 8.00f, D.baseCurlScale);
+            slider("BottomDetailCurlScale", &L.detailCurlScale, 0.00f, 8.00f, D.detailCurlScale);
+            slider("BottomSmoothness", &L.smoothness, 0.00f, 4.00f, D.smoothness);
+            slider("BottomSoftness", &L.softness, 0.00f, 2.00f, D.softness);
+            slider("Bottom (m)", &L.bottom, 0.0f, 8000.0f, D.bottom);
+            slider("Top (m)", &L.top, 0.0f, 15000.0f, D.top);
+            slider("BottomCover", &L.cover, 0.00f, 1.00f, D.cover);
+            slider("BottomExtinction", &L.extinction, 0.00f, 8.00f, D.extinction);
+            slider("BottomAmbientAmount", &L.ambientAmount, 0.00f, 4.00f, D.ambientAmount);
+            slider("BottomAbsorption", &L.absorption, 0.00f, 4.00f, D.absorption);
+            slider("BottomLuminance", &L.luminance, 0.00f, 8.00f, D.luminance);
+            slider("BottomSunLightPower", &L.sunLightPower, 0.00f, 8.00f, D.sunLightPower);
+            slider("BottomMoonLightPower", &L.moonLightPower, 0.00f, 8.00f, D.moonLightPower);
+            slider("BottomSkyLightPower", &L.skyLightPower, 0.00f, 8.00f, D.skyLightPower);
+            ImGui::SeparatorText("Vertical Density");
+            slider("BottomBottomDensity", &L.bottomDensity, 0.00f, 2.00f, D.bottomDensity);
+            slider("BottomMiddleDensity", &L.middleDensity, 0.00f, 2.00f, D.middleDensity);
+            slider("BottomTopDensity", &L.topDensity, 0.00f, 2.00f, D.topDensity);
+        }
+        // Top Layer
+        if (ImGui::CollapsingHeader("Top Layer", ImGuiTreeNodeFlags_None)) {
+            CloudLayer& L = p.topLayer;
+            const CloudLayer& D = defaults.topLayer;
+            slider("TopScale", &L.scale, 0.00f, 8.00f, D.scale);
+            slider("TopDetailScale", &L.detailScale, 0.00f, 16.00f, D.detailScale);
+            slider("TopStretch", &L.stretch, 0.25f, 4.00f, D.stretch);
+            slider("TopBaseCurl", &L.baseCurl, 0.00f, 2.00f, D.baseCurl);
+            slider("TopDetailCurl", &L.detailCurl, 0.00f, 2.00f, D.detailCurl);
+            slider("TopBaseCurlScale", &L.baseCurlScale, 0.00f, 8.00f, D.baseCurlScale);
+            slider("TopDetailCurlScale", &L.detailCurlScale, 0.00f, 8.00f, D.detailCurlScale);
+            slider("TopSmoothness", &L.smoothness, 0.00f, 4.00f, D.smoothness);
+            slider("TopSoftness", &L.softness, 0.00f, 2.00f, D.softness);
+            slider("Top (m)", &L.bottom, 0.0f, 8000.0f, D.bottom);
+            slider("Ceiling (m)", &L.top, 0.0f, 15000.0f, D.top);
+            slider("TopCover", &L.cover, 0.00f, 1.00f, D.cover);
+            slider("TopExtinction", &L.extinction, 0.00f, 8.00f, D.extinction);
+            slider("TopAmbientAmount", &L.ambientAmount, 0.00f, 4.00f, D.ambientAmount);
+            slider("TopAbsorption", &L.absorption, 0.00f, 4.00f, D.absorption);
+            slider("TopLuminance", &L.luminance, 0.00f, 8.00f, D.luminance);
+            slider("TopSunLightPower", &L.sunLightPower, 0.00f, 8.00f, D.sunLightPower);
+            slider("TopMoonLightPower", &L.moonLightPower, 0.00f, 8.00f, D.moonLightPower);
+            slider("TopSkyLightPower", &L.skyLightPower, 0.00f, 8.00f, D.skyLightPower);
+            ImGui::SeparatorText("Vertical Density");
+            slider("TopBottomDensity", &L.bottomDensity, 0.00f, 2.00f, D.bottomDensity);
+            slider("TopMiddleDensity", &L.middleDensity, 0.00f, 2.00f, D.middleDensity);
+            slider("TopTopDensity", &L.topDensity, 0.00f, 2.00f, D.topDensity);
+        }
+
         if (ImGui::Button("Save Preset")) {
             auto path = derive_presets_path(S.rt); S.store.save(path);
         }
@@ -147,10 +246,11 @@ void pv::clouds::draw_overlay(CloudsState& S) {
         }
 
         if (live.shv_available) {
-            ImGui::TextDisabled("SHV: %02d:%02d, %s", live.hour, live.minute, to_string(live.weather).c_str());
+            ImGui::TextDisabled("Rendered: %02d:%02d, %s", live.hour, live.minute, weather_to_string(live.weather));
         }
         else {
-            ImGui::TextDisabled("SHV unavailable — manual edit mode");
+            ImGui::TextDisabled("Rendered: %02d:%02d, %s", S.edit.bucket.h, S.edit.bucket.m, weather_to_string(S.edit.weather));
         }
+        ImGui::TextDisabled("Editing:  %02d:%02d, %s", S.edit.bucket.h, S.edit.bucket.m, weather_to_string(S.edit.weather));
     }
 }

@@ -54,4 +54,5 @@ namespace DataReader {
 	void script_main();
 	void register_data_reader(HMODULE hModule, DataSource *source);
 	void unregister_data_reader(HMODULE hModule);
+	bool is_registered();
 }

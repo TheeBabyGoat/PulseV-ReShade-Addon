@@ -1,90 +1,184 @@
 #include "cloud_presets.hpp"
-#include "../util/IniLite.hpp"
-#include <cmath>
+#include <algorithm>
 #include <cstdio>
-#include <filesystem>
-
-#include <regex>
 #include <fstream>
-#include <sstream>
-#include <vector>
-#include <cstdlib>
+#include <cstring>
+#include <unordered_map>
+#include <string>
+
 
 using namespace pv::clouds;
+
+// --- Minimal INI shim (used if your project doesn't provide util/IniLite.hpp) ---
+namespace pv {
+    namespace clouds {
+        struct IniLite {
+            struct Section {
+                std::unordered_map<std::string, std::string> kv;
+                float get_float(const char* key, float def) const {
+                    std::unordered_map<std::string, std::string>::const_iterator it = kv.find(std::string(key));
+                    if (it == kv.end()) return def;
+                    const std::string& s = it->second;
+                    char* endp = 0;
+                    float v = std::strtof(s.c_str(), &endp);
+                    return (endp == s.c_str()) ? def : v;
+                }
+                void set(const char* key, float v) {
+                    char buf[64];
+                    std::snprintf(buf, sizeof(buf), "%.6g", v);
+                    kv[std::string(key)] = std::string(buf);
+                }
+                void set(const char* key, const std::string& v) {
+                    kv[std::string(key)] = v;
+                }
+            };
+            std::unordered_map<std::string, Section> sections;
+
+            static std::string trim(const std::string& s) {
+                size_t a = 0, b = s.size();
+                while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r')) ++a;
+                while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r')) --b;
+                return s.substr(a, b - a);
+            }
+            static bool starts_with(const std::string& s, const char* pfx) {
+                size_t n = std::strlen(pfx);
+                return s.size() >= n && s.compare(0, n, pfx) == 0;
+            }
+
+            bool load(const std::string& path) {
+                sections.clear();
+                std::ifstream f(path.c_str());
+                if (!f.is_open()) return false;
+                std::string line;
+                std::string current;
+                while (std::getline(f, line)) {
+                    // strip comments ; or #
+                    size_t sc = line.find(';');
+                    size_t hc = line.find('#');
+                    size_t cpos = std::string::npos;
+                    if (sc != std::string::npos && hc != std::string::npos) cpos = (sc < hc ? sc : hc);
+                    else if (sc != std::string::npos) cpos = sc;
+                    else if (hc != std::string::npos) cpos = hc;
+                    if (cpos != std::string::npos) line = line.substr(0, cpos);
+
+                    line = trim(line);
+                    if (line.empty()) continue;
+
+                    if (line[0] == '[' && line.size() > 2 && line[line.size() - 1] == ']') {
+                        current = trim(line.substr(1, line.size() - 2));
+                        (void)sections[current]; // ensure section exists
+                        continue;
+                    }
+                    size_t eq = line.find('=');
+                    if (eq == std::string::npos) continue;
+                    std::string key = trim(line.substr(0, eq));
+                    std::string val = trim(line.substr(eq + 1));
+                    if (!current.empty()) {
+                        sections[current].kv[key] = val;
+                    }
+                }
+                return true;
+            }
+
+            bool save(const std::string& path) const {
+                std::ofstream f(path.c_str());
+                if (!f.is_open()) return false;
+                for (std::unordered_map<std::string, Section>::const_iterator it = sections.begin();
+                    it != sections.end(); ++it) {
+                    f << "[" << it->first << "]\n";
+                    const Section& s = it->second;
+                    for (std::unordered_map<std::string, std::string>::const_iterator kv = s.kv.begin();
+                        kv != s.kv.end(); ++kv) {
+                        f << kv->first << "=" << kv->second << "\n";
+                    }
+                    f << "\n";
+                }
+                return true;
+            }
+        };
+    }
+} // namespace pv::clouds
+// --- end INI shim ---
+
+
 
 static const char* kWeatherNames[] = {
   "CLEAR","EXTRASUNNY","CLOUDS","OVERCAST","RAIN","CLEARING","THUNDER",
   "SMOG","FOGGY","XMAS","SNOW","SNOWLIGHT","BLIZZARD","HALLOWEEN","NEUTRAL"
 };
 
-std::string pv::clouds::to_string(Weather w) { return kWeatherNames[(int)w]; }
-bool pv::clouds::from_string(const std::string& s, Weather& out) {
-    for (int i = 0; i < (int)Weather::COUNT; i++) if (s == kWeatherNames[i]) { out = (Weather)i; return true; }
-    return false;
-}
-std::string pv::clouds::to_string(const TimeBucket& b) {
-    char buf[16]; std::snprintf(buf, sizeof(buf), "%02d:%02d", b.h, b.m); return buf;
-}
+static std::string two(int v) { char b[8]; std::snprintf(b, sizeof(b), "%02d", v); return b; }
 
-TimeBucket pv::clouds::nearest_bucket(int h, int m) {
-    const std::array<TimeBucket, 13> all = { kBuckets[0],kBuckets[1],kBuckets[2],kBuckets[3],kBuckets[4],kBuckets[5],kBuckets[6],kBuckets[7],kBuckets[8],kBuckets[9],kBuckets[10],kBuckets[11],kBucket2200 };
-    int best_idx = 0; int best = 1e9; int t = h * 60 + m;
-    for (int i = 0; i < (int)all.size(); ++i) { int tt = all[i].h * 60 + all[i].m; int d = std::abs(tt - t); if (d < best) { best = d; best_idx = i; } }
-    return all[best_idx];
+std::string PresetStore::make_key(Weather w, const TimeBucket& b) {
+    int wi = static_cast<int>(w);
+    if (wi < 0) wi = 0;
+    if (wi >= static_cast<int>(Weather::COUNT)) wi = static_cast<int>(Weather::COUNT) - 1;
+    return std::string(kWeatherNames[wi]) + "_" + two(b.h) + ":" + two(b.m);
 }
-
-std::string PresetStore::make_key(Weather w, const TimeBucket& b) { return to_string(w) + ":" + to_string(b); }
 
 const CloudPreset* PresetStore::try_get(Weather w, const TimeBucket& b) const {
-    auto it = map.find(make_key(w, b));
-    return it == map.end() ? nullptr : &it->second;
+    std::unordered_map<std::string, CloudPreset>::const_iterator it = map.find(make_key(w, b));
+    return (it == map.end()) ? NULL : &it->second;
 }
 
-CloudPreset& PresetStore::get_or_create(Weather w, const TimeBucket& b) { return map[make_key(w, b)]; }
-
-static void read_global(pv::ini::Ini& ini, GlobalConfig& g) {
-    auto& s = ini["Global"];
-    g.autoApply = s.get_bool("AutoApply", true);
-    g.hotkeySave = s.get_vk("HotkeySave", 0x79);
-    g.hotkeyReload = s.get_vk("HotkeyReload", 0x7A);
-    g.hotkeyToggleUI = s.get_vk("HotkeyToggleUI", 0x78);
-    g.blendSeconds = s.get_float("BlendTimeSeconds", 1.0f);
+CloudPreset& PresetStore::get_or_create(Weather w, const TimeBucket& b) {
+    return map[make_key(w, b)];
 }
 
-static void write_global(pv::ini::Ini& ini, const GlobalConfig& g) {
-    auto& s = ini["Global"];
-    s.set_bool("AutoApply", g.autoApply);
-    s.set_vk("HotkeySave", g.hotkeySave);
-    s.set_vk("HotkeyReload", g.hotkeyReload);
-    s.set_vk("HotkeyToggleUI", g.hotkeyToggleUI);
-    s.set_float("BlendTimeSeconds", g.blendSeconds);
-}
+bool PresetStore::load(const std::string& ini_path) {
+    IniLite ini;
+    if (!ini.load(ini_path)) return false;
 
-bool PresetStore::load(const std::string& path) {
-    pv::ini::Ini ini; if (!ini.load(path)) {
-        const char* env = std::getenv("PULSEV_LOAD_WEATHERS");
-        if (env) { load_from_weathers_file(std::string(env)); return true; }
-        return false;
-    }
-    read_global(ini, globals);
-    for (auto& kvp : ini.sections) {
-        const std::string& sec = kvp.first; if (sec == "Global") continue;
-        auto pos = sec.find(':'); if (pos == std::string::npos) continue;
-        Weather w{}; if (!from_string(sec.substr(0, pos), w)) continue;
-        int hh = 0, mm = 0; if (std::sscanf(sec.c_str() + pos + 1, "%d:%d", &hh, &mm) != 2) continue;
-        TimeBucket b{ hh,mm }; CloudPreset p{};
-        auto& kv = kvp.second;
+    map.clear();
 
+    for (std::unordered_map<std::string, decltype(ini.sections)::mapped_type>::iterator it = ini.sections.begin();
+        it != ini.sections.end(); ++it)
+    {
+        const std::string& sec_name = it->first;
+        auto& kv = it->second;
+
+        // Parse "WEATHER_HH:MM"
+        std::string::size_type us = sec_name.find('_');
+        if (us == std::string::npos) continue;
+        std::string weather_str = sec_name.substr(0, us);
+        std::string time_str = sec_name.substr(us + 1);
+
+        // Weather to index
+        int wi = -1;
+        for (int i = 0; i < static_cast<int>(Weather::COUNT); ++i) {
+            if (weather_str == kWeatherNames[i]) { wi = i; break; }
+        }
+        if (wi < 0) continue;
+
+        // Time HH:MM
+        TimeBucket b;
+        b.h = 12; b.m = 0;
+        if (time_str.size() >= 4) {
+            int hh = 12, mm = 0;
+            const int parsed = std::sscanf(time_str.c_str(), "%d:%d", &hh, &mm);
+            if (parsed == 2) {
+                // Clamp to sane ranges
+                if (hh < 0) hh = 0; else if (hh > 23) hh = 23;
+                if (mm < 0) mm = 0; else if (mm > 59) mm = 59;
+                b.h = hh; b.m = mm;
+            }
+        }
+
+        CloudPreset p;
+
+        // Globals
         p.cloudScale = kv.get_float("cloudScale", p.cloudScale);
         p.cloudDetailScale = kv.get_float("cloudDetailScale", p.cloudDetailScale);
         p.cloudStretch = kv.get_float("cloudStretch", p.cloudStretch);
+        p.cloudHeightOffset = kv.get_float("cloudHeightOffset", p.cloudHeightOffset);
         p.cloudBaseCurl = kv.get_float("cloudBaseCurl", p.cloudBaseCurl);
         p.cloudDetailCurl = kv.get_float("cloudDetailCurl", p.cloudDetailCurl);
         p.cloudBaseCurlScale = kv.get_float("cloudBaseCurlScale", p.cloudBaseCurlScale);
         p.cloudDetailCurlScale = kv.get_float("cloudDetailCurlScale", p.cloudDetailCurlScale);
         p.cloudYFade = kv.get_float("cloudYFade", p.cloudYFade);
-
         p.cloudCover = kv.get_float("cloudCover", p.cloudCover);
+        p.cloudThreshold = kv.get_float("cloudThreshold", p.cloudThreshold);
+        p.cloudJitter = kv.get_float("cloudJitter", p.cloudJitter);
         p.cloudExtinction = kv.get_float("cloudExtinction", p.cloudExtinction);
         p.cloudAmbientAmount = kv.get_float("cloudAmbientAmount", p.cloudAmbientAmount);
         p.cloudAbsorption = kv.get_float("cloudAbsorption", p.cloudAbsorption);
@@ -94,151 +188,133 @@ bool PresetStore::load(const std::string& path) {
         p.cloudLuminanceMultiplier = kv.get_float("cloudLuminanceMultiplier", p.cloudLuminanceMultiplier);
         p.cloudSunLightPower = kv.get_float("cloudSunLightPower", p.cloudSunLightPower);
         p.cloudMoonLightPower = kv.get_float("cloudMoonLightPower", p.cloudMoonLightPower);
-
-        {
-            float r = kv.get_float("MoonColorR", p.MoonColor.x);
-            float g = kv.get_float("MoonColorG", p.MoonColor.y);
-            float b3 = kv.get_float("MoonColorB", p.MoonColor.z);
-            p.MoonColor = { r,g,b3 };
-        }
         p.MoonlightBoost = kv.get_float("MoonlightBoost", p.MoonlightBoost);
         p.cloudSkyLightPower = kv.get_float("cloudSkyLightPower", p.cloudSkyLightPower);
+        p.cloudDenoise = kv.get_float("cloudDenoise", p.cloudDenoise);
+        p.cloudDepthEdgeFar = kv.get_float("cloudDepthEdgeFar", p.cloudDepthEdgeFar);
+        p.cloudDepthEdgeThreshold = kv.get_float("cloudDepthEdgeThreshold", p.cloudDepthEdgeThreshold);
+        p.MoonColor.x = kv.get_float("MoonColor.x", p.MoonColor.x);
+        p.MoonColor.y = kv.get_float("MoonColor.y", p.MoonColor.y);
+        p.MoonColor.z = kv.get_float("MoonColor.z", p.MoonColor.z);
 
-        map[make_key(w, b)] = p;
+        // Layers
+        const char* whiches[2] = { "Bottom", "Top" };
+        CloudLayer* layers[2] = { &p.bottomLayer, &p.topLayer };
+        for (int li = 0; li < 2; ++li) {
+            const char* which = whiches[li];
+            CloudLayer& L = *layers[li];
+            std::string W(which);
+            L.scale = kv.get_float((W + "Scale").c_str(), L.scale);
+            L.detailScale = kv.get_float((W + "DetailScale").c_str(), L.detailScale);
+            L.stretch = kv.get_float((W + "Stretch").c_str(), L.stretch);
+            L.baseCurl = kv.get_float((W + "BaseCurl").c_str(), L.baseCurl);
+            L.detailCurl = kv.get_float((W + "DetailCurl").c_str(), L.detailCurl);
+            L.baseCurlScale = kv.get_float((W + "BaseCurlScale").c_str(), L.baseCurlScale);
+            L.detailCurlScale = kv.get_float((W + "DetailCurlScale").c_str(), L.detailCurlScale);
+            L.smoothness = kv.get_float((W + "Smoothness").c_str(), L.smoothness);
+            L.softness = kv.get_float((W + "Softness").c_str(), L.softness);
+            L.bottom = kv.get_float((W + "Bottom").c_str(), L.bottom);
+            L.top = kv.get_float((W + "Top").c_str(), L.top);
+            L.cover = kv.get_float((W + "Cover").c_str(), L.cover);
+            L.extinction = kv.get_float((W + "Extinction").c_str(), L.extinction);
+            L.ambientAmount = kv.get_float((W + "AmbientAmount").c_str(), L.ambientAmount);
+            L.absorption = kv.get_float((W + "Absorption").c_str(), L.absorption);
+            L.luminance = kv.get_float((W + "Luminance").c_str(), L.luminance);
+            L.sunLightPower = kv.get_float((W + "SunLightPower").c_str(), L.sunLightPower);
+            L.moonLightPower = kv.get_float((W + "MoonLightPower").c_str(), L.moonLightPower);
+            L.skyLightPower = kv.get_float((W + "SkyLightPower").c_str(), L.skyLightPower);
+            L.bottomDensity = kv.get_float((W + "BottomDensity").c_str(), L.bottomDensity);
+            L.middleDensity = kv.get_float((W + "MiddleDensity").c_str(), L.middleDensity);
+            L.topDensity = kv.get_float((W + "TopDensity").c_str(), L.topDensity);
+        }
+
+        map[make_key(static_cast<Weather>(wi), b)] = p;
     }
+
     return true;
 }
 
-bool PresetStore::save(const std::string& path) const {
-    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
-    pv::ini::Ini ini;
-    write_global(ini, globals);
-    for (auto& [key, p] : map) {
-        auto& s = ini[key];
-        s.set_float("cloudScale", p.cloudScale);
-        s.set_float("cloudDetailScale", p.cloudDetailScale);
-        s.set_float("cloudStretch", p.cloudStretch);
-        s.set_float("cloudBaseCurl", p.cloudBaseCurl);
-        s.set_float("cloudDetailCurl", p.cloudDetailCurl);
-        s.set_float("cloudBaseCurlScale", p.cloudBaseCurlScale);
-        s.set_float("cloudDetailCurlScale", p.cloudDetailCurlScale);
-        s.set_float("cloudYFade", p.cloudYFade);
+bool PresetStore::save(const std::string& ini_path) const {
+    IniLite ini;
+    for (std::unordered_map<std::string, CloudPreset>::const_iterator it = map.begin();
+        it != map.end(); ++it)
+    {
+        const std::string& key = it->first;
+        const CloudPreset& p = it->second;
+        auto& sec = ini.sections[key];
 
-        s.set_float("cloudCover", p.cloudCover);
-        s.set_float("cloudExtinction", p.cloudExtinction);
-        s.set_float("cloudAmbientAmount", p.cloudAmbientAmount);
-        s.set_float("cloudAbsorption", p.cloudAbsorption);
-        s.set_float("cloudForwardScatter", p.cloudForwardScatter);
-        s.set_float("cloudLightStepFactor", p.cloudLightStepFactor);
-        s.set_float("cloudContrast", p.cloudContrast);
-        s.set_float("cloudLuminanceMultiplier", p.cloudLuminanceMultiplier);
-        s.set_float("cloudSunLightPower", p.cloudSunLightPower);
-        s.set_float("cloudMoonLightPower", p.cloudMoonLightPower);
+        // Global
+        sec.set("cloudScale", p.cloudScale);
+        sec.set("cloudDetailScale", p.cloudDetailScale);
+        sec.set("cloudStretch", p.cloudStretch);
+        sec.set("cloudHeightOffset", p.cloudHeightOffset);
+        sec.set("cloudBaseCurl", p.cloudBaseCurl);
+        sec.set("cloudDetailCurl", p.cloudDetailCurl);
+        sec.set("cloudBaseCurlScale", p.cloudBaseCurlScale);
+        sec.set("cloudDetailCurlScale", p.cloudDetailCurlScale);
+        sec.set("cloudYFade", p.cloudYFade);
+        sec.set("cloudCover", p.cloudCover);
+        sec.set("cloudThreshold", p.cloudThreshold);
+        sec.set("cloudJitter", p.cloudJitter);
+        sec.set("cloudExtinction", p.cloudExtinction);
+        sec.set("cloudAmbientAmount", p.cloudAmbientAmount);
+        sec.set("cloudAbsorption", p.cloudAbsorption);
+        sec.set("cloudForwardScatter", p.cloudForwardScatter);
+        sec.set("cloudLightStepFactor", p.cloudLightStepFactor);
+        sec.set("cloudContrast", p.cloudContrast);
+        sec.set("cloudLuminanceMultiplier", p.cloudLuminanceMultiplier);
+        sec.set("cloudSunLightPower", p.cloudSunLightPower);
+        sec.set("cloudMoonLightPower", p.cloudMoonLightPower);
+        sec.set("MoonColor.x", p.MoonColor.x);
+        sec.set("MoonColor.y", p.MoonColor.y);
+        sec.set("MoonColor.z", p.MoonColor.z);
+        sec.set("MoonlightBoost", p.MoonlightBoost);
+        sec.set("cloudSkyLightPower", p.cloudSkyLightPower);
+        sec.set("cloudDenoise", p.cloudDenoise);
+        sec.set("cloudDepthEdgeFar", p.cloudDepthEdgeFar);
+        sec.set("cloudDepthEdgeThreshold", p.cloudDepthEdgeThreshold);
 
-        s.set_float("MoonColorR", p.MoonColor.x);
-        s.set_float("MoonColorG", p.MoonColor.y);
-        s.set_float("MoonColorB", p.MoonColor.z);
-
-        s.set_float("MoonlightBoost", p.MoonlightBoost);
-        s.set_float("cloudSkyLightPower", p.cloudSkyLightPower);
+        // Layers
+        const char* whiches[2] = { "Bottom", "Top" };
+        const CloudLayer* layers[2] = { &p.bottomLayer, &p.topLayer };
+        for (int li = 0; li < 2; ++li) {
+            const char* which = whiches[li];
+            const CloudLayer& L = *layers[li];
+            std::string W(which);
+            sec.set((W + "Scale").c_str(), L.scale);
+            sec.set((W + "DetailScale").c_str(), L.detailScale);
+            sec.set((W + "Stretch").c_str(), L.stretch);
+            sec.set((W + "BaseCurl").c_str(), L.baseCurl);
+            sec.set((W + "DetailCurl").c_str(), L.detailCurl);
+            sec.set((W + "BaseCurlScale").c_str(), L.baseCurlScale);
+            sec.set((W + "DetailCurlScale").c_str(), L.detailCurlScale);
+            sec.set((W + "Smoothness").c_str(), L.smoothness);
+            sec.set((W + "Softness").c_str(), L.softness);
+            sec.set((W + "Bottom").c_str(), L.bottom);
+            sec.set((W + "Top").c_str(), L.top);
+            sec.set((W + "Cover").c_str(), L.cover);
+            sec.set((W + "Extinction").c_str(), L.extinction);
+            sec.set((W + "AmbientAmount").c_str(), L.ambientAmount);
+            sec.set((W + "Absorption").c_str(), L.absorption);
+            sec.set((W + "Luminance").c_str(), L.luminance);
+            sec.set((W + "SunLightPower").c_str(), L.sunLightPower);
+            sec.set((W + "MoonLightPower").c_str(), L.moonLightPower);
+            sec.set((W + "SkyLightPower").c_str(), L.skyLightPower);
+            sec.set((W + "BottomDensity").c_str(), L.bottomDensity);
+            sec.set((W + "MiddleDensity").c_str(), L.middleDensity);
+            sec.set((W + "TopDensity").c_str(), L.topDensity);
+        }
     }
-    return ini.save(path);
+    return ini.save(ini_path);
 }
 
-
-
-// Runtime parser: load presets from shaders/weathers.fxh
-#include <fstream>
-#include <sstream>
-
-bool PresetStore::load_from_weathers_file(const std::string& shaders_folder) {
-    std::string path = shaders_folder;
-    if (!path.empty() && (path.back() != '/' && path.back() != '\\')) path += "/";
-    path += "weathers.fxh";
-    std::ifstream in(path);
-    if (!in.is_open()) return false;
-    std::stringstream ss; ss << in.rdbuf();
-    std::string txt = ss.str();
-    // find all CLOUD_LAYER_PRESET(NAME, ...)
-    std::regex rx(R"(CLOUD_LAYER_PRESET\s*\(\s*([A-Za-z0-9_]+)\s*,([^\)]*)\))");
-    std::smatch m;
-    std::string::const_iterator searchStart = txt.cbegin();
-    while (std::regex_search(searchStart, txt.cend(), m, rx)) {
-        std::string name = m[1].str();
-        std::string args = m[2].str();
-        // strip comments and newlines, then split by commas
-        std::string cleaned;
-        cleaned.reserve(args.size());
-        bool in_comment = false;
-        for (size_t i = 0; i < args.size(); ++i) {
-            if (i + 1 < args.size() && args[i] == '/' && args[i + 1] == '/') { in_comment = true; ++i; continue; }
-            if (args[i] == '\n') { in_comment = false; continue; }
-            if (!in_comment) cleaned.push_back(args[i]);
-        }
-        // split
-        std::vector<float> vals;
-        std::stringstream as(cleaned);
-        std::string token;
-        while (std::getline(as, token, ',')) {
-            // trim
-            size_t a = token.find_first_not_of(" \t\r\n");
-            if (a == std::string::npos) continue;
-            size_t b = token.find_last_not_of(" \t\r\n");
-            std::string tok = token.substr(a, b - a + 1);
-            try {
-                float v = std::stof(tok);
-                vals.push_back(v);
-            }
-            catch (...) { /* ignore non-floats */ }
-        }
-        // map vals into CloudPreset using deterministic mapping
-        CloudPreset cp;
-        // default construct preserves defaults
-        if (!vals.empty()) {
-            size_t n = vals.size();
-            size_t half = n / 2;
-            auto g = [&](size_t idx, float d)->float { return idx < n ? vals[idx] : d; };
-            // bottom indices 0..half-1, top indices half..n-1; use averages for many fields
-            auto b = [&](size_t i, float d) { return i < half ? vals[i] : d; };
-            auto t = [&](size_t i, float d) { return (half + i) < n ? vals[half + i] : d; };
-            cp.cloudScale = (b(0, 1.0f) + t(0, 1.0f)) * 0.5f;
-            cp.cloudDetailScale = (b(1, 1.0f) + t(1, 1.0f)) * 0.5f;
-            cp.cloudStretch = (b(2, 0.0f) + t(2, 0.0f)) * 0.5f;
-            cp.cloudBaseCurl = (b(3, 0.0f) + t(3, 0.0f)) * 0.5f;
-            cp.cloudDetailCurl = (b(4, 0.0f) + t(4, 0.0f)) * 0.5f;
-            cp.cloudBaseCurlScale = (b(5, 1.0f) + t(5, 1.0f)) * 0.5f;
-            cp.cloudDetailCurlScale = (b(6, 1.0f) + t(6, 1.0f)) * 0.5f;
-            // heights: bottom bottom/top at indices ~10,11
-            cp.cloudHeightOffset = b(10, cp.cloudHeightOffset);
-            // cover at ~12
-            cp.cloudCover = (b(12, cp.cloudCover) + t(12, cp.cloudCover)) * 0.5f;
-            cp.cloudExtinction = (b(13, cp.cloudExtinction) + t(13, cp.cloudExtinction)) * 0.5f;
-            cp.cloudAmbientAmount = (b(14, cp.cloudAmbientAmount) + t(14, cp.cloudAmbientAmount)) * 0.5f;
-            cp.cloudAbsorption = (b(15, cp.cloudAbsorption) + t(15, cp.cloudAbsorption)) * 0.5f;
-            // lighting: sun/moon/sky - use top indices around 18..20 relative to top block
-            cp.cloudSunLightPower = t(18, cp.cloudSunLightPower);
-            cp.cloudMoonLightPower = t(19, cp.cloudMoonLightPower);
-            cp.cloudSkyLightPower = t(20, cp.cloudSkyLightPower);
-            cp.cloudLuminanceMultiplier = (t(10, cp.cloudLuminanceMultiplier) + b(10, cp.cloudLuminanceMultiplier)) * 0.5f;
-        }
-        // time bucket default noon
-        TimeBucket tb{ 12,0 };
-        // map name to Weather enum if possible
-        Weather w;
-        std::string up = name;
-        for (auto& c : up) c = (char)toupper(c);
-        if (!pv::clouds::from_string(up, w)) {
-            // try partial matches
-            bool found = false;
-            for (int i = 0; i < (int)Weather::COUNT; i++) {
-                std::string wn = to_string((Weather)i);
-                if (wn.find(up) != std::string::npos) { w = (Weather)i; found = true; break; }
-            }
-            if (!found) w = Weather::NEUTRAL;
-        }
-        map[make_key(w, tb)] = cp;
-        searchStart = m.suffix().first;
-    }
+bool PresetStore::load_from_weathers_file(const std::string& /*shaders_folder*/) {
+    // Optional: could parse weathers.fxh to seed defaults.
     return true;
 }
 
+TimeBucket pv::clouds::nearest_bucket(int h, int m) {
+    if (m >= 30) { h = (h + 1) % 24; m = 0; }
+    else { m = 0; }
+    TimeBucket b; b.h = h; b.m = m; return b;
+}

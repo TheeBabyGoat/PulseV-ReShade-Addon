@@ -54,6 +54,8 @@ float _time_of_day = 0.0;
 float _last_clock_time = 0.0;
 size_t _pause_frame_count = MIN_PAUSE_FRAMES;
 bool _paused = true;
+static bool _registered = false;
+
 std::chrono::steady_clock::time_point _last_game_time_point = std::chrono::steady_clock::now();
 float _time_scale = 1.0;
 float _timer = 0.0;
@@ -537,11 +539,21 @@ void DataReader::force_change_wind() {
 void DataReader::register_data_reader(HMODULE hModule, DataSource *source)
 {
 	data_source = source;
+	_registered = true;
 	source->register_script(hModule, script_main);
 }
 
 // Unregisters the entry point in scripthookv
 void DataReader::unregister_data_reader(HMODULE hModule)
 {
+	_registered = false;
 	data_source->unregister_script(hModule);
 }
+
+
+bool DataReader::is_registered()
+{
+	return _registered;
+}
+
+
