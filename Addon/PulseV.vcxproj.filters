@@ -5,12 +5,15 @@
     <ClCompile Include="data_reader.cpp" />
     <ClCompile Include="timecycle.cpp" />
     <ClCompile Include="..\deps\tinyxml2\tinyxml2.cpp" />
-    <ClCompile Include="rdr1_source.hpp" />
-    <ClCompile Include="rdr1_timecycle.hpp" />
     <ClCompile Include="rdr1_source.cpp" />
     <ClCompile Include="gtav_source.cpp" />
     <ClCompile Include="reshade_data.cpp" />
     <ClCompile Include="game_data_source.cpp" />
+    <ClCompile Include="cloud_overlay.cpp" />
+    <ClCompile Include="cloud_presets.cpp" />
+    <ClCompile Include="cloud_uniforms.cpp" />
+    <ClCompile Include="scripthook_bridge.cpp" />
+    <ClCompile Include="cloud_overlay_integration.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="data_reader.hpp" />
@@ -30,6 +33,12 @@
     <ClInclude Include="util\PathUtils.hpp">
       <Filter>utils</Filter>
     </ClInclude>
+    <ClInclude Include="cloud_overlay.hpp" />
+    <ClInclude Include="cloud_presets.hpp" />
+    <ClInclude Include="cloud_uniforms.hpp" />
+    <ClInclude Include="rdr1_source.hpp" />
+    <ClInclude Include="rdr1_timecycle.hpp" />
+    <ClInclude Include="scripthook_bridge.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="utils">

@@ -69,12 +69,27 @@ void pv::clouds::tick(CloudsState& S, double now) {
 
     // The shader renders the game's *current* weather. Even when Auto-apply is off,
     // we still need to push uniforms for the weather that's actually being rendered.
-    Weather render_w = shv ? live.weather : S.edit.weather;
-    TimeBucket render_b = shv ? nearest_bucket(live.hour, live.minute) : S.edit.bucket;
+    const bool autoApply = S.store.globals.autoApply;
+    Weather render_w = (autoApply && shv) ? live.weather : S.edit.weather;
+    TimeBucket render_b = (autoApply && shv) ? nearest_bucket(live.hour, live.minute) : S.edit.bucket;
 
-    // 1) Apply to the rendered weather
+    // 1) Apply to the rendered weather (with robust fallbacks)
     const CloudPreset* P_render = S.store.try_get(render_w, render_b);
-    if (!P_render) P_render = &S.store.get_or_create(render_w, render_b);
+
+    if (!P_render) {
+        // Fallback 1: same weather at 00:00
+        TimeBucket b00{ render_b.h, 0 };
+        P_render = S.store.try_get(render_w, b00);
+    }
+    if (!P_render) {
+        // Fallback 2: whatever the user is editing
+        P_render = S.store.try_get(S.edit.weather, S.edit.bucket);
+    }
+    if (!P_render) {
+        // Fallback 3: stick with last applied or safe defaults
+        P_render = &S.last_applied;
+    }
+
     float t = 1.0f;
     if (S.store.globals.blendSeconds > 0.0f) {
         double dt = std::max(0.0, now - S.last_change_time);
@@ -83,16 +98,6 @@ void pv::clouds::tick(CloudsState& S, double now) {
     CloudPreset cur = lerp(S.last_applied, *P_render, t);
     apply_preset_for_weather(S.rt, S.ucache, cur, render_w);
     if (t >= 1.0f) S.last_applied = *P_render;
-
-    // 2) If Auto-apply is OFF and the user has selected a *different* weather/time,
-    // also push those uniforms so they can preview edits without changing game weather.
-    if (!S.store.globals.autoApply) {
-        if (S.edit.weather != render_w || S.edit.bucket.h != render_b.h || S.edit.bucket.m != render_b.m) {
-            const CloudPreset* P_edit = S.store.try_get(S.edit.weather, S.edit.bucket);
-            if (!P_edit) P_edit = &S.store.get_or_create(S.edit.weather, S.edit.bucket);
-            apply_preset_for_weather(S.rt, S.ucache, *P_edit, S.edit.weather);
-        }
-    }
 }
 
 void pv::clouds::draw_overlay(CloudsState& S) {

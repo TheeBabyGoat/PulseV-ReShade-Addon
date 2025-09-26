@@ -7,7 +7,116 @@
 #include <string>
 
 
+#include <regex>
+#include <sstream>
+#include <vector>
 using namespace pv::clouds;
+
+// ---------- weathers.fxh importer helpers ----------
+namespace {
+    static std::string slurp_file(const std::string& path) {
+        std::ifstream f(path.c_str(), std::ios::binary);
+        if (!f.is_open()) return {};
+        std::ostringstream ss; ss << f.rdbuf();
+        return ss.str();
+    }
+
+    static bool parse_weather_token(const std::string& name, pv::clouds::Weather& out) {
+        using pv::clouds::Weather;
+        static const std::unordered_map<std::string, Weather> map = {
+            {"Clear",       Weather::CLEAR},
+            {"ExtraSunny",  Weather::EXTRASUNNY},
+            {"Clouds",      Weather::CLOUDS},
+            {"Overcast",    Weather::OVERCAST},
+            {"Rain",        Weather::RAIN},
+            {"Clearing",    Weather::CLEARING},
+            {"Thunder",     Weather::THUNDER},
+            {"Smog",        Weather::SMOG},
+            {"Foggy",       Weather::FOGGY},
+            {"Snow",        Weather::SNOW},
+            {"SnowLight",   Weather::SNOWLIGHT},
+            {"Blizzard",    Weather::BLIZZARD},
+            {"Halloween",   Weather::HALLOWEEN},
+        };
+        auto it = map.find(name);
+        if (it == map.end()) return false;
+        out = it->second;
+        return true;
+    }
+
+    static inline void fill_layer_from_list(pv::clouds::CloudLayer& L, const float* v) {
+        int i = 0;
+        L.scale = v[i++]; L.detailScale = v[i++]; L.stretch = v[i++];
+        L.baseCurl = v[i++]; L.detailCurl = v[i++]; L.baseCurlScale = v[i++];
+        L.detailCurlScale = v[i++]; L.smoothness = v[i++]; L.softness = v[i++];
+        L.bottom = v[i++]; L.top = v[i++]; L.cover = v[i++];
+        L.extinction = v[i++]; L.ambientAmount = v[i++]; L.absorption = v[i++];
+        L.luminance = v[i++]; L.sunLightPower = v[i++]; L.moonLightPower = v[i++];
+        L.skyLightPower = v[i++]; L.bottomDensity = v[i++]; L.middleDensity = v[i++];
+        L.topDensity = v[i++];
+    }
+
+    static std::vector<pv::clouds::TimeBucket> all_hour_buckets() {
+        std::vector<pv::clouds::TimeBucket> v; v.reserve(24);
+        for (int h = 0; h < 24; ++h) { pv::clouds::TimeBucket b; b.h = h; b.m = 0; v.push_back(b); }
+        return v;
+    }
+
+    struct ParsedLayerPreset {
+        pv::clouds::Weather w;
+        float values[44];
+    };
+
+    static std::unordered_map<pv::clouds::Weather, ParsedLayerPreset>
+        parse_weathers_fxh(const std::string& path) {
+        std::unordered_map<pv::clouds::Weather, ParsedLayerPreset> out;
+        const std::string text = slurp_file(path);
+        if (text.empty()) return out;
+
+        const std::regex call_re(R"(CLOUD_LAYER_PRESET\s*\(\s*([A-Za-z_]\w*)\s*,([\s\S]*?)\))");
+        auto it = std::sregex_iterator(text.begin(), text.end(), call_re);
+        const auto end = std::sregex_iterator();
+
+        for (; it != end; ++it) {
+            const std::string name = (*it)[1].str();
+            if (name == "PRESET") continue;
+
+            pv::clouds::Weather w;
+            if (!parse_weather_token(name, w)) {
+                continue;
+            }
+
+            std::string args = (*it)[2].str();
+
+            static const std::regex cmt_re(R"(\/\/[^\n\r]*)");
+            args = std::regex_replace(args, cmt_re, std::string());
+
+            static const std::regex num_re(R"([+-]?(?:\d+\.\d*|\.\d+|\d+))");
+            std::vector<float> nums;
+            for (auto jt = std::sregex_iterator(args.begin(), args.end(), num_re);
+                jt != std::sregex_iterator(); ++jt) {
+                nums.push_back(std::strtof((*jt).str().c_str(), nullptr));
+            }
+            if (nums.size() != 44) {
+                continue;
+            }
+
+            ParsedLayerPreset P; P.w = w;
+            for (size_t i = 0; i < 44; ++i) P.values[i] = nums[i];
+            out[w] = P;
+        }
+        return out;
+    }
+
+    static pv::clouds::CloudPreset make_cloud_preset_from_44(const float v[44]) {
+        pv::clouds::CloudPreset p;
+        fill_layer_from_list(p.bottomLayer, v + 0);
+        fill_layer_from_list(p.topLayer, v + 22);
+        return p;
+    }
+} // anonymous namespace
+
+
 
 // --- Minimal INI shim (used if your project doesn't provide util/IniLite.hpp) ---
 namespace pv {
@@ -308,8 +417,47 @@ bool PresetStore::save(const std::string& ini_path) const {
     return ini.save(ini_path);
 }
 
-bool PresetStore::load_from_weathers_file(const std::string& /*shaders_folder*/) {
-    // Optional: could parse weathers.fxh to seed defaults.
+bool PresetStore::load_from_weathers_file(const std::string& shaders_folder) {
+    // 1) Build full path to weathers.fxh
+    std::string fxh = shaders_folder;
+    if (!fxh.empty()) {
+        char back = fxh.back();
+        if (back != '/' && back != '\\') fxh.push_back('/');
+    }
+    fxh += "weathers.fxh";
+
+    // 2) Parse weathers.fxh
+    auto parsed = parse_weathers_fxh(fxh);
+    if (parsed.empty()) {
+        return false;
+    }
+
+    // 3) Convert to CloudPreset per weather
+    std::unordered_map<pv::clouds::Weather, pv::clouds::CloudPreset> by_weather;
+    for (const auto& kv : parsed) {
+        by_weather[kv.first] = make_cloud_preset_from_44(kv.second.values);
+    }
+
+    // 4) Fallbacks for enums that may be absent
+    if (by_weather.find(pv::clouds::Weather::XMAS) == by_weather.end()) {
+        auto it = by_weather.find(pv::clouds::Weather::SNOW);
+        if (it != by_weather.end()) by_weather[pv::clouds::Weather::XMAS] = it->second;
+    }
+    if (by_weather.find(pv::clouds::Weather::NEUTRAL) == by_weather.end()) {
+        auto it = by_weather.find(pv::clouds::Weather::CLEAR);
+        if (it != by_weather.end()) by_weather[pv::clouds::Weather::NEUTRAL] = it->second;
+    }
+
+    // 5) Replicate across all hourly buckets at minute 00
+    const auto buckets = all_hour_buckets();
+    for (const auto& kv : by_weather) {
+        const auto w = kv.first;
+        const auto& p = kv.second;
+        for (const auto& b : buckets) {
+            this->map[make_key(w, b)] = p;
+        }
+    }
+
     return true;
 }
 
